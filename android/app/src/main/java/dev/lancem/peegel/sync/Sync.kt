@@ -204,7 +204,10 @@ class Sync(private val context: Context, val store: Store) {
                         when (lastError) {
                             is AuthFailed -> "That code has expired. Show a new code on your computer and scan again."
                             is HandshakeError -> "Your computer rejected the pairing (${lastError.code})."
-                            else -> "Couldn't reach ${info.serverName}. Make sure both devices are on the same Wi‑Fi."
+                            else -> buildString {
+                                append("Couldn't reach ${info.serverName}. Make sure both devices are on the same Wi‑Fi.")
+                                lastError?.let { append("\n\n(${it.javaClass.simpleName}: ${it.message})") }
+                            }
                         },
                     )
                     return

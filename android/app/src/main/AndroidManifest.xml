@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- The desktop serves plain ws:// on the local network; Android 9+ blocks
+         cleartext traffic by default, so it must be allowed explicitly. -->
     <application
         android:name=".PeegelApp"
         android:allowBackup="false"
@@ -19,7 +21,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Peegel">
+        android:theme="@style/Theme.Peegel"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".ui.MainActivity"
