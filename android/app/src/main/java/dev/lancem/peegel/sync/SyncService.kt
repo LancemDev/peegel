@@ -8,6 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -26,6 +30,10 @@ import kotlinx.coroutines.flow.onEach
 /** Foreground service that keeps the connection to the computer alive. */
 class SyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        // A new Wi-Fi network may be where the computer is: retry right away.
+        override fun onAvailable(network: Network) = app.sync.reconnectNow()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -45,6 +53,10 @@ class SyncService : Service() {
                 getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(status))
             }
         }.launchIn(scope)
+        getSystemService(ConnectivityManager::class.java).registerNetworkCallback(
+            NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),
+            networkCallback,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -59,6 +71,7 @@ class SyncService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) }
         scope.cancel()
         app.sync.stop()
         super.onDestroy()
