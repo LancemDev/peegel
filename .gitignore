@@ -1,0 +1,23 @@
+# Editors / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Rust / Tauri
+target/
+desktop/src-tauri/gen/schemas/
+
+# Node
+node_modules/
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+local.properties
+captures/
+*.apk
+*.aab
+*.keystore
+*.jks
