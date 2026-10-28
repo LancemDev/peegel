@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Peegel</string>
+    <string name="share_label">Send to computer</string>
+    <string name="tile_label">Send clipboard</string>
+    <string name="channel_sync">Clipboard sync</string>
+    <string name="channel_sync_description">Shows while Peegel is keeping your clipboard in sync</string>
+    <string name="action_send_clipboard">Send clipboard</string>
+</resources>
