@@ -56,6 +56,30 @@ impl Clip {
     }
 }
 
+/// One-line label for the tray's recent-clips menu.
+fn clip_menu_label(clip: &Clip) -> String {
+    if clip.mime == clipboard::TEXT_MIME {
+        let text: String = String::from_utf8_lossy(&clip.data)
+            .chars()
+            .take(256)
+            .collect();
+        let mut preview = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if preview.chars().count() > 48 {
+            preview = preview.chars().take(47).collect::<String>() + "…";
+        }
+        if preview.is_empty() {
+            "Empty text clip".to_string()
+        } else {
+            preview
+        }
+    } else {
+        match &clip.thumb {
+            Some((_, width, height)) => format!("Image · {width}×{height}"),
+            None => "Image".to_string(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct DeviceView {
     id: String,
@@ -351,6 +375,17 @@ impl Core {
         self.changed();
     }
 
+    /// Short labels for the tray's recent-clips menu, newest first.
+    pub fn recent_for_menu(&self, limit: usize) -> Vec<(String, String)> {
+        self.history
+            .lock()
+            .unwrap()
+            .iter()
+            .take(limit)
+            .map(|clip| (clip.id.clone(), clip_menu_label(clip)))
+            .collect()
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         let config = self.config();
         let addresses = pairing::lan_addresses();
@@ -404,5 +439,36 @@ impl Core {
             devices,
             history,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clip(mime: &str, data: &[u8]) -> Clip {
+        Clip {
+            id: "test".into(),
+            thumb: None,
+            mime: mime.into(),
+            data: Arc::new(data.to_vec()),
+            sha256: String::new(),
+            ts: 0,
+            origin_device: None,
+            origin_name: String::new(),
+        }
+    }
+
+    #[test]
+    fn menu_labels_are_short_and_single_line() {
+        assert_eq!(
+            clip_menu_label(&clip(clipboard::TEXT_MIME, b"hello\n\t world")),
+            "hello world"
+        );
+        let long = "a".repeat(200);
+        let label = clip_menu_label(&clip(clipboard::TEXT_MIME, long.as_bytes()));
+        assert_eq!(label.chars().count(), 48);
+        assert!(label.ends_with('…'));
+        assert_eq!(clip_menu_label(&clip(clipboard::PNG_MIME, b"png")), "Image");
     }
 }

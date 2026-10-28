@@ -23,6 +23,10 @@ end-to-end encrypted.
 | Laptop → Phone   | Automatic. Anything you copy on the laptop lands in the phone's clipboard. |
 | Phone → Laptop   | One tap: Quick Settings tile, the notification's **Send clipboard** button, or the Share menu. Android 10+ blocks background apps from reading the clipboard. |
 
+Received clips go straight to the clipboard without a popup. Desktop notifications
+are opt-in (Settings), and the tray's **Recent clips** menu keeps the last 8 clips
+one click away — pick one to copy it again.
+
 ## Repository layout
 
 | Path              | What                                                         |

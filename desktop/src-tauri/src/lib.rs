@@ -10,7 +10,7 @@ mod server;
 use std::sync::Arc;
 
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Listener, Manager, State, WindowEvent,
 };
@@ -102,8 +102,20 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-fn build_tray(app: &AppHandle, core: &Arc<Core>) -> tauri::Result<()> {
+/// Builds the tray menu, including the recent-clips history.
+fn tray_menu(app: &AppHandle, core: &Arc<Core>) -> tauri::Result<Menu<tauri::Wry>> {
     let open = MenuItem::with_id(app, "open", "Open Peegel", true, None::<&str>)?;
+    let recent = Submenu::with_id(app, "recent", "Recent clips", true)?;
+    let clips = core.recent_for_menu(8);
+    if clips.is_empty() {
+        let empty = MenuItem::with_id(app, "recent:none", "No clips yet", false, None::<&str>)?;
+        recent.append(&empty)?;
+    } else {
+        for (id, label) in clips {
+            let item = MenuItem::with_id(app, format!("recent:{id}"), label, true, None::<&str>)?;
+            recent.append(&item)?;
+        }
+    }
     let pause = CheckMenuItem::with_id(
         app,
         "pause",
@@ -113,32 +125,70 @@ fn build_tray(app: &AppHandle, core: &Arc<Core>) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(
+    Menu::with_items(
         app,
-        &[&open, &pause, &PredefinedMenuItem::separator(app)?, &quit],
-    )?;
+        &[
+            &open,
+            &recent,
+            &PredefinedMenuItem::separator(app)?,
+            &pause,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )
+}
+
+fn rebuild_tray_menu(app: &AppHandle, core: &Arc<Core>) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    match tray_menu(app, core) {
+        Ok(menu) => match tray.set_menu(Some(menu)) {
+            Ok(()) => log::debug!("tray menu rebuilt"),
+            Err(err) => log::warn!("could not update the tray menu: {err}"),
+        },
+        Err(err) => log::warn!("could not build the tray menu: {err}"),
+    }
+}
+
+fn build_tray(app: &AppHandle, core: &Arc<Core>) -> tauri::Result<()> {
+    let menu = tray_menu(app, core)?;
 
     TrayIconBuilder::with_id("main")
         .tooltip("Peegel")
         .icon(app.default_window_icon().cloned().expect("app icon"))
         .menu(&menu)
-        .on_menu_event(move |app, event| match event.id.as_ref() {
-            "open" => show_window(app),
-            "pause" => {
-                let core = app.state::<Arc<Core>>();
-                core.set_paused(!core.paused());
+        .on_menu_event(move |app, event| {
+            let id = event.id.as_ref();
+            match id {
+                "open" => show_window(app),
+                "pause" => {
+                    let core = app.state::<Arc<Core>>();
+                    core.set_paused(!core.paused());
+                }
+                "quit" => app.exit(0),
+                _ => {
+                    if let Some(clip_id) = id.strip_prefix("recent:") {
+                        if clip_id != "none" {
+                            let core = app.state::<Arc<Core>>();
+                            if let Err(err) = core.recopy(clip_id) {
+                                log::warn!("could not copy the selected clip: {err:#}");
+                            }
+                        }
+                    }
+                }
             }
-            "quit" => app.exit(0),
-            _ => {}
         })
         .build(app)?;
 
-    // Keep the tray checkbox in sync with the toggle in the window.
-    let tray_pause = pause;
+    // Keep the recent-clips list and the pause check in sync with the app state.
     let handle = app.clone();
     app.listen_any("state-changed", move |_| {
-        let paused = handle.state::<Arc<Core>>().paused();
-        let _ = tray_pause.set_checked(paused);
+        let app = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            let core = app.state::<Arc<Core>>();
+            rebuild_tray_menu(&app, &core);
+        });
     });
     Ok(())
 }

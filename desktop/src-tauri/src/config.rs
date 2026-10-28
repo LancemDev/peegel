@@ -37,7 +37,7 @@ impl Default for Config {
             port: protocol::DEFAULT_PORT,
             paused: false,
             max_image_bytes: 20 * 1024 * 1024,
-            notify_on_receive: true,
+            notify_on_receive: false,
             devices: Vec::new(),
         }
     }
