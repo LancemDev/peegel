@@ -46,4 +46,4 @@ uuid = { version = "1.20.0", features = ["v4"] }
 wl-clipboard-rs = "0.9.5"
 
 [build-dependencies]
-tauri-build = "2.6.3"
+tauri-build = { version = "2.6.3", features = [] }
