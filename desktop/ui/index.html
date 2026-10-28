@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Peegel</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <img src="logo.svg" alt="" width="32" height="32" />
+        <div>
+          <h1>Peegel</h1>
+          <p id="status" class="status">Starting…</p>
+        </div>
+      </div>
+      <label class="switch" title="Pause syncing in both directions">
+        <input id="paused" type="checkbox" />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label">Pause</span>
+      </label>
+    </header>
+
+    <nav>
+      <button class="tab active" data-tab="clips">Clips</button>
+      <button class="tab" data-tab="devices">Devices</button>
+    </nav>
+
+    <main>
+      <section id="tab-clips" class="panel">
+        <div id="clips-empty" class="empty hidden">
+          <p>Nothing copied yet.</p>
+          <p class="muted">Copy something here or on your phone and it will show up.</p>
+        </div>
+        <ul id="clips" class="list"></ul>
+        <button id="clear" class="link hidden">Clear history</button>
+      </section>
+
+      <section id="tab-devices" class="panel hidden">
+        <ul id="devices" class="list"></ul>
+
+        <div class="card pair">
+          <h2>Pair a phone</h2>
+          <p class="muted">
+            Open Peegel on your phone, tap <b>Pair with computer</b> and scan this code.
+            Both devices must be on the same Wi‑Fi.
+          </p>
+          <img id="qr" alt="Pairing QR code" />
+          <p id="addresses" class="muted small"></p>
+          <button id="new-code" class="secondary">New code</button>
+        </div>
+      </section>
+    </main>
+
+    <template id="clip-template">
+      <li class="clip" tabindex="0">
+        <span class="origin"></span>
+        <div class="body">
+          <p class="preview"></p>
+          <p class="meta"></p>
+        </div>
+        <span class="copied">Copied</span>
+      </li>
+    </template>
+
+    <template id="device-template">
+      <li class="device">
+        <span class="dot"></span>
+        <div class="body">
+          <p class="name"></p>
+          <p class="meta"></p>
+        </div>
+        <button class="danger unpair">Unpair</button>
+      </li>
+    </template>
+
+    <script src="main.js"></script>
+  </body>
+</html>
