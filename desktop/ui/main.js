@@ -37,6 +37,7 @@ function renderStatus() {
     status.textContent = "No phone paired yet";
   }
   $("#paused").checked = state.paused;
+  $("#notify").checked = state.notify_on_receive;
 }
 
 function renderClips() {
@@ -114,6 +115,7 @@ function showTab(name) {
   }
   $("#tab-clips").classList.toggle("hidden", name !== "clips");
   $("#tab-devices").classList.toggle("hidden", name !== "devices");
+  $("#tab-settings").classList.toggle("hidden", name !== "settings");
 }
 
 for (const tab of document.querySelectorAll(".tab")) {
@@ -122,6 +124,16 @@ for (const tab of document.querySelectorAll(".tab")) {
 $("#paused").addEventListener("change", (e) => invoke("set_paused", { paused: e.target.checked }));
 $("#new-code").addEventListener("click", () => invoke("new_pairing_code"));
 $("#clear").addEventListener("click", () => invoke("clear_history"));
+$("#notify").addEventListener("change", (e) => invoke("set_notify", { notify: e.target.checked }));
+$("#autostart").addEventListener("change", async (e) => {
+  try {
+    await invoke("set_autostart", { enabled: e.target.checked });
+  } catch (err) {
+    console.error(err);
+  }
+  e.target.checked = await invoke("get_autostart");
+});
+invoke("get_autostart").then((enabled) => ($("#autostart").checked = enabled));
 
 listen("state-changed", refresh);
 setInterval(() => state && renderClips(), 30_000);

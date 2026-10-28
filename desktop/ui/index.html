@@ -25,6 +25,7 @@
     <nav>
       <button class="tab active" data-tab="clips">Clips</button>
       <button class="tab" data-tab="devices">Devices</button>
+      <button class="tab" data-tab="settings">Settings</button>
     </nav>
 
     <main>
@@ -50,6 +51,29 @@
           <p id="addresses" class="muted small"></p>
           <button id="new-code" class="secondary">New code</button>
         </div>
+      </section>
+
+      <section id="tab-settings" class="panel hidden">
+        <ul class="list">
+          <li class="setting">
+            <div class="body">
+              <p class="name">Start on login</p>
+              <p class="meta">Peegel starts in the tray when you log in.</p>
+            </div>
+            <label class="switch"><input id="autostart" type="checkbox" /><span class="track"><span class="thumb"></span></span></label>
+          </li>
+          <li class="setting">
+            <div class="body">
+              <p class="name">Notify on receive</p>
+              <p class="meta">Show a notification when something arrives from your phone.</p>
+            </div>
+            <label class="switch"><input id="notify" type="checkbox" /><span class="track"><span class="thumb"></span></span></label>
+          </li>
+        </ul>
+        <p class="muted small about">
+          Peegel syncs over your local network only. Everything is end‑to‑end encrypted
+          with keys created when you pair.
+        </p>
       </section>
     </main>
 

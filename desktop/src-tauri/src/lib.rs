@@ -14,10 +14,15 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Listener, Manager, State, WindowEvent,
 };
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::core::{Core, Snapshot};
 
 type CoreState<'a> = State<'a, Arc<Core>>;
+
+/// Passed when launched by the login autostart entry: stay in the tray.
+const MINIMIZED_ARG: &str = "--minimized";
 
 #[tauri::command]
 fn get_state(core: CoreState) -> Snapshot {
@@ -47,6 +52,46 @@ fn recopy(core: CoreState, id: String) -> Result<(), String> {
 #[tauri::command]
 fn clear_history(core: CoreState) {
     core.clear_history();
+}
+
+#[tauri::command]
+fn set_notify(core: CoreState, notify: bool) {
+    core.set_notify_on_receive(notify);
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    let result = if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    result.map_err(|e| e.to_string())
+}
+
+fn notify_received(app: &AppHandle, clip: &core::Clip) {
+    let body = if clip.mime == clipboard::TEXT_MIME {
+        let text = String::from_utf8_lossy(&clip.data);
+        let mut preview: String = text.chars().take(120).collect();
+        if text.chars().count() > 120 {
+            preview.push('…');
+        }
+        preview
+    } else {
+        "Image copied to the clipboard".to_string()
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title(format!("Copied from {}", clip.origin_name))
+        .body(body)
+        .show();
 }
 
 fn show_window(app: &AppHandle) {
@@ -103,15 +148,25 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show_window(app)))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![MINIMIZED_ARG]),
+        ))
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = match std::env::var_os("PEEGEL_CONFIG_DIR") {
                 Some(dir) => dir.into(),
                 None => app.path().app_config_dir()?,
             };
             let handle = app.handle().clone();
-            let core = Core::new(config::ConfigStore::new(config_dir), move || {
-                let _ = handle.emit("state-changed", ());
-            });
+            let notify_handle = app.handle().clone();
+            let core = Core::new(
+                config::ConfigStore::new(config_dir),
+                move || {
+                    let _ = handle.emit("state-changed", ());
+                },
+                move |clip| notify_received(&notify_handle, clip),
+            );
             app.manage(core.clone());
 
             let watcher_core = core.clone();
@@ -139,7 +194,8 @@ pub fn run() {
 
             build_tray(app.handle(), &core)?;
 
-            if core.config().devices.is_empty() {
+            let minimized = std::env::args().any(|arg| arg == MINIMIZED_ARG);
+            if !minimized {
                 show_window(app.handle());
             }
             Ok(())
@@ -156,7 +212,10 @@ pub fn run() {
             set_paused,
             unpair,
             recopy,
-            clear_history
+            clear_history,
+            set_notify,
+            get_autostart,
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Peegel");

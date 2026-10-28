@@ -148,6 +148,17 @@ main { flex: 1; overflow-y: auto; padding: 14px 18px 18px; }
 }
 .clip.flash .copied { opacity: 1; }
 
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.about { margin-top: 16px; line-height: 1.5; text-align: center; }
+
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.on { background: var(--ok); }
 .name { font-weight: 600; }

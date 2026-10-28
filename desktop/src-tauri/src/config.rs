@@ -24,6 +24,8 @@ pub struct Config {
     pub port: u16,
     pub paused: bool,
     pub max_image_bytes: usize,
+    /// Show a desktop notification when a clip arrives from a phone.
+    pub notify_on_receive: bool,
     pub devices: Vec<PairedDevice>,
 }
 
@@ -35,6 +37,7 @@ impl Default for Config {
             port: protocol::DEFAULT_PORT,
             paused: false,
             max_image_bytes: 20 * 1024 * 1024,
+            notify_on_receive: true,
             devices: Vec::new(),
         }
     }

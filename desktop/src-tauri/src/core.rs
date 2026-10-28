@@ -83,6 +83,7 @@ pub struct Snapshot {
     server_name: String,
     port: u16,
     paused: bool,
+    notify_on_receive: bool,
     pair_uri: String,
     qr_svg: String,
     addresses: Vec<String>,
@@ -99,10 +100,15 @@ pub struct Core {
     last_hash: Mutex<Option<String>>,
     outgoing: broadcast::Sender<Arc<Clip>>,
     on_change: Box<dyn Fn() + Send + Sync>,
+    on_receive: Box<dyn Fn(&Clip) + Send + Sync>,
 }
 
 impl Core {
-    pub fn new(store: ConfigStore, on_change: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
+    pub fn new(
+        store: ConfigStore,
+        on_change: impl Fn() + Send + Sync + 'static,
+        on_receive: impl Fn(&Clip) + Send + Sync + 'static,
+    ) -> Arc<Self> {
         let config = store.load();
         let (outgoing, _) = broadcast::channel(16);
         Arc::new(Self {
@@ -114,6 +120,7 @@ impl Core {
             last_hash: Mutex::new(None),
             outgoing,
             on_change: Box::new(on_change),
+            on_receive: Box::new(on_receive),
         })
     }
 
@@ -219,6 +226,11 @@ impl Core {
         self.changed();
     }
 
+    pub fn set_notify_on_receive(&self, notify: bool) {
+        self.update_config(|config| config.notify_on_receive = notify);
+        self.changed();
+    }
+
     pub fn paused(&self) -> bool {
         self.config.lock().unwrap().paused
     }
@@ -304,6 +316,9 @@ impl Core {
             })?;
             // Forward to any other connected phones.
             let _ = self.outgoing.send(Arc::new(clip.clone()));
+            if self.config().notify_on_receive {
+                (self.on_receive)(&clip);
+            }
         }
         self.push_history(clip);
         self.changed();
@@ -384,6 +399,7 @@ impl Core {
             server_name: config.server_name,
             port: config.port,
             paused: config.paused,
+            notify_on_receive: config.notify_on_receive,
             addresses: addresses.iter().map(ToString::to_string).collect(),
             devices,
             history,
