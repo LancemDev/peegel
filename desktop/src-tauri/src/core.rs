@@ -37,11 +37,22 @@ pub struct Clip {
     /// `None` when the clip was copied on this computer.
     pub origin_device: Option<String>,
     pub origin_name: String,
+    /// Data URL preview and original dimensions, for images.
+    pub thumb: Option<(String, u32, u32)>,
 }
 
 impl Clip {
     fn is_supported_mime(mime: &str) -> bool {
-        mime == clipboard::TEXT_MIME
+        matches!(
+            mime,
+            clipboard::TEXT_MIME | clipboard::PNG_MIME | clipboard::JPEG_MIME
+        )
+    }
+
+    fn thumb_for(mime: &str, data: &[u8]) -> Option<(String, u32, u32)> {
+        mime.starts_with("image/")
+            .then(|| clipboard::thumbnail(data))
+            .flatten()
     }
 }
 
@@ -59,6 +70,9 @@ pub struct ClipView {
     mime: String,
     preview: String,
     size: usize,
+    thumb: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
     origin: String,
     from_phone: bool,
     ts: u64,
@@ -236,6 +250,7 @@ impl Core {
         }
         let clip = Clip {
             id: uuid::Uuid::new_v4().to_string(),
+            thumb: Clip::thumb_for(&local.mime, &local.data),
             mime: local.mime,
             data: Arc::new(local.data),
             sha256,
@@ -263,6 +278,9 @@ impl Core {
         if !Clip::is_supported_mime(&mime) {
             bail!("unsupported mime type {mime}");
         }
+        if mime.starts_with("image/") && body.len() > self.config().max_image_bytes {
+            bail!("image larger than the size limit");
+        }
         if crypto::sha256_hex(body) != sha256 {
             bail!("clip hash mismatch");
         }
@@ -271,6 +289,7 @@ impl Core {
         }
         let clip = Clip {
             id,
+            thumb: Clip::thumb_for(&mime, body),
             mime,
             data: Arc::new(body.to_vec()),
             sha256,
@@ -351,6 +370,9 @@ impl Core {
                     String::new()
                 },
                 size: c.data.len(),
+                thumb: c.thumb.as_ref().map(|t| t.0.clone()),
+                width: c.thumb.as_ref().map(|t| t.1),
+                height: c.thumb.as_ref().map(|t| t.2),
                 origin: c.origin_name.clone(),
                 from_phone: c.origin_device.is_some(),
                 ts: c.ts,

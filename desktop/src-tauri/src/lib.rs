@@ -115,7 +115,11 @@ pub fn run() {
             app.manage(core.clone());
 
             let watcher_core = core.clone();
-            clipboard::watch(protocol::MAX_FRAME_BYTES - 1024, move |clip, initial| {
+            let limits = clipboard::Limits {
+                max_text_bytes: protocol::MAX_FRAME_BYTES - 1024,
+                max_image_bytes: core.config().max_image_bytes,
+            };
+            clipboard::watch(limits, move |clip, initial| {
                 watcher_core.local_clip_changed(clip, initial);
             });
 

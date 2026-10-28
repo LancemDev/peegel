@@ -48,9 +48,17 @@ function renderClips() {
     const origin = item.querySelector(".origin");
     origin.textContent = clip.from_phone ? "📱" : "💻";
     origin.classList.toggle("phone", clip.from_phone);
-    item.querySelector(".preview").textContent = clip.preview;
+    const isImage = clip.mime.startsWith("image/");
+    item.querySelector(".preview").textContent = isImage ? "" : clip.preview;
+    item.querySelector(".preview").classList.toggle("hidden", isImage);
+    if (isImage && clip.thumb) {
+      const thumb = item.querySelector(".thumb");
+      thumb.src = clip.thumb;
+      thumb.classList.remove("hidden");
+    }
+    const dims = clip.width ? `${clip.width}×${clip.height} · ` : "";
     item.querySelector(".meta").textContent =
-      `${clip.origin} · ${timeAgo(clip.ts)} · ${formatSize(clip.size)}`;
+      `${clip.origin} · ${timeAgo(clip.ts)} · ${dims}${formatSize(clip.size)}`;
     const copy = async () => {
       try {
         await invoke("recopy", { id: clip.id });

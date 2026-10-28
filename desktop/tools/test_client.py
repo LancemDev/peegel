@@ -79,6 +79,7 @@ async def main() -> None:
     parser.add_argument("uri", nargs="?", help="peegel://pair?... URI")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--send", help="text to send after connecting")
+    parser.add_argument("--send-image", help="PNG or JPEG file to send after connecting")
     args = parser.parse_args()
 
     if args.resume:
@@ -113,20 +114,30 @@ async def main() -> None:
             "host": host, "port": port, "device_id": device_id, "key": b64(device_key),
         }))
 
-        if args.send:
-            body = args.send.encode()
+        async def send_clip(mime: str, body: bytes) -> None:
             await ws.send(tx.seal(encode({
-                "t": "clip", "id": str(uuid.uuid4()), "mime": "text/plain",
+                "t": "clip", "id": str(uuid.uuid4()), "mime": mime,
                 "sha256": hashlib.sha256(body).hexdigest(), "ts": int(time.time() * 1000),
             }, body)))
-            print(f"sent {args.send!r}")
+            print(f"sent {mime} ({len(body)} bytes)", flush=True)
+
+        if args.send:
+            await send_clip("text/plain", args.send.encode())
+        if args.send_image:
+            data = Path(args.send_image).read_bytes()
+            await send_clip("image/jpeg" if data[:2] == b"\xff\xd8" else "image/png", data)
 
         async for message in ws:
             header, body = decode(rx.open(message))
             if header["t"] == "ping":
                 await ws.send(tx.seal(encode({"t": "pong"})))
             elif header["t"] == "clip":
-                preview = body.decode(errors="replace") if header["mime"].startswith("text/") else f"<{len(body)} bytes>"
+                if header["mime"].startswith("text/"):
+                    preview = body.decode(errors="replace")
+                else:
+                    path = Path("/tmp") / f"peegel-{header['id']}.{header['mime'].split('/')[1]}"
+                    path.write_bytes(body)
+                    preview = f"{len(body)} bytes saved to {path}"
                 print(f"clip [{header['mime']}]: {preview}", flush=True)
 
 
