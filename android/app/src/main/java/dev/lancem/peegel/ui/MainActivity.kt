@@ -8,7 +8,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -22,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -29,7 +29,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import dev.lancem.peegel.R
 import dev.lancem.peegel.app
 import dev.lancem.peegel.sync.PairInfo
-import dev.lancem.peegel.sync.Protocol
+import dev.lancem.peegel.sync.ClipFiles
 import dev.lancem.peegel.sync.Status
 import dev.lancem.peegel.sync.SyncService
 
@@ -139,10 +139,10 @@ class MainActivity : ComponentActivity() {
 
     private fun sendClipboard() {
         val clipboard = getSystemService(ClipboardManager::class.java)
-        val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        val content = ClipFiles.read(this, clipboard.primaryClip)
         val message = when {
-            text.isNullOrEmpty() -> "Clipboard is empty"
-            app.sync.send(Protocol.TEXT_MIME, text.toByteArray()) -> "Sent"
+            content == null -> "Clipboard is empty"
+            app.sync.send(content.mime, content.body) -> "Sent"
             else -> "Not connected to your computer"
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("BatteryLife")
     private fun requestIgnoreBatteryOptimizations() {
-        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$packageName".toUri())
         runCatching { startActivity(intent) }
             .onFailure { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
     }

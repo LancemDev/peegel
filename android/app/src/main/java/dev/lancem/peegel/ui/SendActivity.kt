@@ -4,11 +4,14 @@ import android.app.Activity
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import androidx.core.content.IntentCompat
 import dev.lancem.peegel.app
+import dev.lancem.peegel.sync.ClipFiles
 import dev.lancem.peegel.sync.Protocol
 import dev.lancem.peegel.sync.Status
 import dev.lancem.peegel.sync.SyncService
@@ -26,8 +29,14 @@ class SendActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND) {
             handled = true
+            val stream = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-            if (text.isNullOrEmpty()) finishWith("Nothing to send") else send(Protocol.TEXT_MIME, text.toByteArray())
+            val content = when {
+                stream != null -> ClipFiles.readImage(this, stream)
+                !text.isNullOrEmpty() -> ClipFiles.Content(Protocol.TEXT_MIME, text.toByteArray())
+                else -> null
+            }
+            if (content == null) finishWith("Nothing to send (images up to 20 MB)") else send(content)
         } else {
             // Reading the clipboard has to wait until this window has focus.
             handler.postDelayed({ if (!handled) finishWith("Couldn't read the clipboard") }, 1_500)
@@ -39,18 +48,13 @@ class SendActivity : Activity() {
         if (!hasFocus || handled) return
         handled = true
         val clipboard = getSystemService(ClipboardManager::class.java)
-        val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
-        val text = item?.coerceToText(this)?.toString()
-        if (text.isNullOrEmpty()) {
-            finishWith("Clipboard is empty")
-        } else {
-            send(Protocol.TEXT_MIME, text.toByteArray())
-        }
+        val content = ClipFiles.read(this, clipboard.primaryClip)
+        if (content == null) finishWith("Clipboard is empty") else send(content)
     }
 
-    private fun send(mime: String, body: ByteArray) {
+    private fun send(content: ClipFiles.Content) {
         val sync = app.sync
-        if (sync.send(mime, body)) {
+        if (sync.send(content.mime, content.body)) {
             val name = (sync.status.value as? Status.Connected)?.name ?: "computer"
             finishWith("Sent to $name")
         } else {

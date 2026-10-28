@@ -1,6 +1,6 @@
 package dev.lancem.peegel.sync
 
-import android.net.Uri
+import androidx.core.net.toUri
 import org.json.JSONObject
 import java.nio.ByteBuffer
 
@@ -42,7 +42,7 @@ data class PairInfo(
     companion object {
         /** Parses `peegel://pair?v=1&id=…&name=…&h=…&p=…&s=…`. */
         fun parse(raw: String): PairInfo? = runCatching {
-            val uri = Uri.parse(raw.trim())
+            val uri = raw.trim().toUri()
             require(uri.scheme == "peegel" && uri.host == "pair")
             require(uri.getQueryParameter("v")?.toInt() == Protocol.VERSION)
             PairInfo(

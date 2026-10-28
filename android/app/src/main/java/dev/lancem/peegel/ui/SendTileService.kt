@@ -16,12 +16,10 @@ class SendTileService : TileService() {
         val tile = qsTile ?: return
         val status = app.sync.status.value
         tile.state = if (status is Status.Connected) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        if (Build.VERSION.SDK_INT >= 29) {
-            tile.subtitle = when (status) {
-                is Status.Connected -> status.name
-                is Status.Connecting -> "Not connected"
-                else -> "Not paired"
-            }
+        tile.subtitle = when (status) {
+            is Status.Connected -> status.name
+            is Status.Connecting -> "Not connected"
+            else -> "Not paired"
         }
         tile.updateTile()
     }

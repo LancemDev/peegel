@@ -53,6 +53,9 @@ data class ClipItem(
     val size: Int,
     val fromPhone: Boolean,
     val ts: Long,
+    /** Local copy of an image clip, used for previews and copying it again. */
+    val imagePath: String? = null,
+    val sha256: String = "",
 )
 
 private class HandshakeError(val code: String) : Exception("rejected by computer: $code")
@@ -164,9 +167,13 @@ class Sync(private val context: Context, val store: Store) {
 
     /** Copies a history entry back onto this phone's clipboard. */
     fun recopy(item: ClipItem) {
-        if (item.mime == Protocol.TEXT_MIME) {
-            clipboard.setPrimaryClip(ClipData.newPlainText("Peegel", item.text))
+        val clip = when {
+            item.mime == Protocol.TEXT_MIME -> ClipData.newPlainText("Peegel", item.text)
+            item.imagePath != null && java.io.File(item.imagePath).exists() ->
+                ClipFiles.imageClip(context, java.io.File(item.imagePath))
+            else -> return
         }
+        clipboard.setPrimaryClip(clip)
     }
 
     private suspend fun runLoop(initialPairing: PairInfo?) {
@@ -378,11 +385,15 @@ class Sync(private val context: Context, val store: Store) {
         if (Crypto.sha256Hex(body) != sha) return
         if (_paused.value) return
         val mime = header.getString("mime")
-        if (mime != Protocol.TEXT_MIME) return
+        if (mime != Protocol.TEXT_MIME && !ClipFiles.isImage(mime)) return
         if (sha != lastHash) {
             lastHash = sha
-            val clip = ClipData.newPlainText("Peegel", String(body))
-            if (Build.VERSION.SDK_INT >= 33) {
+            val clip = if (mime == Protocol.TEXT_MIME) {
+                ClipData.newPlainText("Peegel", String(body))
+            } else {
+                ClipFiles.imageClip(context, ClipFiles.store(context, sha, mime, body))
+            }
+            if (Build.VERSION.SDK_INT >= 34) {
                 clip.description.extras = PersistableBundle().apply {
                     putBoolean(ClipDescription.EXTRA_IS_REMOTE_DEVICE, true)
                 }
@@ -394,6 +405,12 @@ class Sync(private val context: Context, val store: Store) {
 
     private fun addHistory(header: JSONObject, body: ByteArray, fromPhone: Boolean) {
         val mime = header.getString("mime")
+        val sha = header.getString("sha256")
+        val imagePath = if (ClipFiles.isImage(mime)) {
+            runCatching { ClipFiles.store(context, sha, mime, body).path }.getOrNull()
+        } else {
+            null
+        }
         val item = ClipItem(
             id = header.getString("id"),
             mime = mime,
@@ -401,10 +418,10 @@ class Sync(private val context: Context, val store: Store) {
             size = body.size,
             fromPhone = fromPhone,
             ts = System.currentTimeMillis(),
+            imagePath = imagePath,
+            sha256 = sha,
         )
-        _history.update { list ->
-            (listOf(item) + list.filterNot { it.mime == item.mime && it.text == item.text && it.size == item.size }).take(50)
-        }
+        _history.update { list -> (listOf(item) + list.filterNot { it.sha256 == sha }).take(50) }
     }
 
     companion object {
