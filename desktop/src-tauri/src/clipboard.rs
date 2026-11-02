@@ -238,19 +238,48 @@ fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
     Ok(out.into_inner())
 }
 
+/// Re-encodes an image of any supported format as PNG.
+fn encode_png_from_image(data: &[u8]) -> Result<Vec<u8>> {
+    let image = image::load_from_memory(data)?;
+    let mut out = Cursor::new(Vec::new());
+    image.write_to(&mut out, image::ImageFormat::Png)?;
+    Ok(out.into_inner())
+}
+
+/// Sources offered for an image on Wayland.
+///
+/// The clipboard is offered as the MIME type that was received, but many
+/// applications only read `image/png` (browsers, chat UIs, terminal
+/// clipboards). Offering both makes JPEG clips pasteable there too.
+fn wayland_image_sources(clip: &LocalClip) -> Vec<copy::MimeSource> {
+    let mut sources = vec![copy::MimeSource {
+        source: copy::Source::Bytes(clip.data.clone().into_boxed_slice()),
+        mime_type: copy::MimeType::Specific(clip.mime.clone()),
+    }];
+    if clip.mime != PNG_MIME {
+        match encode_png_from_image(&clip.data) {
+            Ok(png) => sources.push(copy::MimeSource {
+                source: copy::Source::Bytes(png.into_boxed_slice()),
+                mime_type: copy::MimeType::Specific(PNG_MIME.into()),
+            }),
+            Err(err) => log::warn!("could not convert clipboard image to PNG: {err:#}"),
+        }
+    }
+    sources
+}
+
 /// Replaces the system clipboard contents.
 pub fn set(clip: &LocalClip) -> Result<()> {
     match BACKEND.get().copied().unwrap_or(Backend::Polling) {
         Backend::Wayland => {
-            let mime = if clip.mime == TEXT_MIME {
-                copy::MimeType::Text
+            if clip.mime == TEXT_MIME {
+                copy::Options::new().copy(
+                    copy::Source::Bytes(clip.data.clone().into_boxed_slice()),
+                    copy::MimeType::Text,
+                )?;
             } else {
-                copy::MimeType::Specific(clip.mime.clone())
-            };
-            copy::Options::new().copy(
-                copy::Source::Bytes(clip.data.clone().into_boxed_slice()),
-                mime,
-            )?;
+                copy::Options::new().copy_multi(wayland_image_sources(clip))?;
+            }
         }
         Backend::Polling => {
             let mut guard = ARBOARD.lock().unwrap();
@@ -288,4 +317,53 @@ pub fn thumbnail(data: &[u8]) -> Option<(String, u32, u32)> {
         width,
         height,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encode(format: image::ImageFormat) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(2, 2, image::Rgb([200, 30, 40]))
+            .write_to(&mut out, format)
+            .unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn jpeg_clip_offers_png_too() {
+        let clip = LocalClip {
+            mime: JPEG_MIME.into(),
+            data: encode(image::ImageFormat::Jpeg),
+        };
+        let sources = wayland_image_sources(&clip);
+        assert_eq!(sources.len(), 2);
+        assert!(matches!(
+            &sources[0].mime_type,
+            copy::MimeType::Specific(mime) if mime.as_str() == JPEG_MIME
+        ));
+        assert!(matches!(
+            &sources[1].mime_type,
+            copy::MimeType::Specific(mime) if mime.as_str() == PNG_MIME
+        ));
+        let copy::Source::Bytes(png) = &sources[1].source else {
+            unreachable!()
+        };
+        assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+    }
+
+    #[test]
+    fn png_clip_is_offered_once() {
+        let clip = LocalClip {
+            mime: PNG_MIME.into(),
+            data: encode(image::ImageFormat::Png),
+        };
+        let sources = wayland_image_sources(&clip);
+        assert_eq!(sources.len(), 1);
+        assert!(matches!(
+            &sources[0].mime_type,
+            copy::MimeType::Specific(mime) if mime.as_str() == PNG_MIME
+        ));
+    }
 }
