@@ -2924,6 +2924,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "tokio-tungstenite",
+ "url",
  "uuid",
  "wl-clipboard-rs",
 ]

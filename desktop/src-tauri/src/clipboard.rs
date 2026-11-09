@@ -6,6 +6,7 @@
 
 use std::{
     borrow::Cow,
+    fs,
     io::{Cursor, Read},
     sync::{Mutex, OnceLock},
     thread,
@@ -18,8 +19,10 @@ use wl_clipboard_rs::{copy, paste, watch};
 pub const TEXT_MIME: &str = "text/plain";
 pub const PNG_MIME: &str = "image/png";
 pub const JPEG_MIME: &str = "image/jpeg";
+const URI_LIST_MIME: &str = "text/uri-list";
 
 const WAYLAND_TEXT_MIMES: &[&str] = &[
+    URI_LIST_MIME,
     "text/plain;charset=utf-8",
     "UTF8_STRING",
     "text/plain",
@@ -104,6 +107,61 @@ fn choose_mime(offered: &[String]) -> Option<(&'static str, &'static str)> {
         .map(|mime| (*mime, *mime))
 }
 
+/// Turns a copied `file://` URI into the image it points at.
+///
+/// File managers copy a file as a URI or URI list, not as image bytes. Without
+/// this, the phone receives the path as text instead of the image.
+fn resolve_file_uri(clip: LocalClip, source_mime: &str, limits: Limits) -> LocalClip {
+    if clip.mime != TEXT_MIME {
+        return clip;
+    }
+    let Ok(text) = std::str::from_utf8(&clip.data) else {
+        return clip;
+    };
+    let uri = if source_mime == URI_LIST_MIME {
+        text.lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && !line.starts_with('#'))
+    } else {
+        let text = text.trim();
+        if text.contains('\n') {
+            return clip;
+        }
+        Some(text)
+    };
+    let Some(uri) = uri else {
+        return clip;
+    };
+    if !uri.starts_with("file://") {
+        return clip;
+    }
+    let Ok(url) = url::Url::parse(uri) else {
+        return clip;
+    };
+    let Ok(path) = url.to_file_path() else {
+        return clip;
+    };
+    let Ok(metadata) = fs::metadata(&path) else {
+        return clip;
+    };
+    if !metadata.is_file() || metadata.len() > limits.max_image_bytes as u64 {
+        return clip;
+    }
+    let Ok(data) = fs::read(&path) else {
+        return clip;
+    };
+    let mime = match image::guess_format(&data) {
+        Ok(image::ImageFormat::Png) => PNG_MIME,
+        Ok(image::ImageFormat::Jpeg) => JPEG_MIME,
+        _ => return clip,
+    };
+    log::debug!("reading copied image file: {}", path.display());
+    LocalClip {
+        mime: mime.into(),
+        data,
+    }
+}
+
 fn wayland_loop<F>(mut watcher: watch::Watcher, limits: Limits, mut on_change: F)
 where
     F: FnMut(LocalClip, bool),
@@ -145,13 +203,17 @@ where
             .map_err(anyhow::Error::from)
             .and_then(|pipe| read_limited(pipe, max));
         match data {
-            Ok(data) if !data.is_empty() => on_change(
-                LocalClip {
-                    mime: mime.into(),
-                    data,
-                },
-                initial,
-            ),
+            Ok(data) if !data.is_empty() => {
+                let clip = resolve_file_uri(
+                    LocalClip {
+                        mime: mime.into(),
+                        data,
+                    },
+                    source_mime,
+                    limits,
+                );
+                on_change(clip, initial);
+            }
             Ok(_) => {}
             Err(err) => log::warn!("could not read clipboard: {err:#}"),
         }
@@ -188,13 +250,15 @@ where
         if let Ok(text) = clipboard.get_text() {
             if last_text.as_deref() != Some(text.as_str()) {
                 if !text.is_empty() && text.len() <= limits.max_text_bytes {
-                    on_change(
+                    let clip = resolve_file_uri(
                         LocalClip {
                             mime: TEXT_MIME.into(),
                             data: text.clone().into_bytes(),
                         },
-                        initial,
+                        TEXT_MIME,
+                        limits,
                     );
+                    on_change(clip, initial);
                 }
                 last_text = Some(text);
                 last_image = None;
@@ -365,5 +429,81 @@ mod tests {
             &sources[0].mime_type,
             copy::MimeType::Specific(mime) if mime.as_str() == PNG_MIME
         ));
+    }
+
+    fn limits() -> Limits {
+        Limits {
+            max_text_bytes: 1024 * 1024,
+            max_image_bytes: 1024 * 1024,
+        }
+    }
+
+    fn temp_file(name: &str, data: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("peegel-{}-{name}", std::process::id()));
+        std::fs::write(&path, data).unwrap();
+        path
+    }
+
+    fn file_uri(path: &std::path::Path) -> String {
+        url::Url::from_file_path(path).unwrap().to_string()
+    }
+
+    #[test]
+    fn file_uri_is_read_as_image() {
+        let path = temp_file("file-uri.png", &encode(image::ImageFormat::Png));
+        let clip = LocalClip {
+            mime: TEXT_MIME.into(),
+            data: file_uri(&path).into_bytes(),
+        };
+        let resolved = resolve_file_uri(clip, TEXT_MIME, limits());
+        assert_eq!(resolved.mime.as_str(), PNG_MIME);
+        assert!(resolved
+            .data
+            .starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn uri_list_uses_first_image() {
+        let first = temp_file("first.jpg", &encode(image::ImageFormat::Jpeg));
+        let second = temp_file("second.png", &encode(image::ImageFormat::Png));
+        let text = format!(
+            "# copied files\r\n{}\r\n{}\r\n",
+            file_uri(&first),
+            file_uri(&second)
+        );
+        let clip = LocalClip {
+            mime: TEXT_MIME.into(),
+            data: text.into_bytes(),
+        };
+        let resolved = resolve_file_uri(clip, URI_LIST_MIME, limits());
+        assert_eq!(resolved.mime.as_str(), JPEG_MIME);
+        let _ = std::fs::remove_file(first);
+        let _ = std::fs::remove_file(second);
+    }
+
+    #[test]
+    fn non_image_file_uri_stays_text() {
+        let path = temp_file("notes.txt", b"hello");
+        let text = file_uri(&path);
+        let clip = LocalClip {
+            mime: TEXT_MIME.into(),
+            data: text.clone().into_bytes(),
+        };
+        let resolved = resolve_file_uri(clip, TEXT_MIME, limits());
+        assert_eq!(resolved.mime.as_str(), TEXT_MIME);
+        assert_eq!(resolved.data, text.into_bytes());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn plain_text_stays_text() {
+        let clip = LocalClip {
+            mime: TEXT_MIME.into(),
+            data: b"hello".to_vec(),
+        };
+        let resolved = resolve_file_uri(clip, TEXT_MIME, limits());
+        assert_eq!(resolved.mime.as_str(), TEXT_MIME);
+        assert_eq!(resolved.data, b"hello".to_vec());
     }
 }
